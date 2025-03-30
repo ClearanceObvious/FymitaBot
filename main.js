@@ -180,7 +180,7 @@ client.on('messageCreate', async message => {
     } else if (message.content === '.createTest') {
         const session = {
             name: "Math 101",
-            date: new Date("2025-03-30"),
+            date: new Date("2025-03-30T14:00:00"),
             sessionHours: 2,
             tutorName: "John Doe",
             tutorID: "12345",
@@ -192,7 +192,7 @@ client.on('messageCreate', async message => {
         await setSession(session);
     } else if (message.content === '.testAdd') {
         const newStudent = { studentName: "John Doe", studentId: "stu789" };
-        await addStudentToSession("Math 101", "12345", new Date("2025-03-30"), newStudent);
+        await addStudentToSession("Math 101", "12345", new Date("2025-03-30T14:00:00"), newStudent);
     }
 });
 
