@@ -161,6 +161,15 @@ async function removeStudentFromSession(sessionName, tutorID, date, studentId) {
     }
 }
 
+function hasAllowedRoles(member) {
+    const allowedRoles = ['1354466746278346842', '1354467923833655459', '1354467270570672388'];
+    return member.roles.cache.some(role => allowedRoles.includes(role.id));
+}
+
+function isOwner(member) {
+    return member.roles.cache.has('1354466746278346842');
+}
+
 // Connect to Discord
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -177,7 +186,7 @@ client.on('guildMemberAdd', member => {
 client.on('messageCreate', async message => {
     if (message.content === '.help') {
         message.reply('Hey!')
-    } else if (message.content === '.createTest') {
+    /*} else if (message.content === '.createTest') {
         const session = {
             name: "Math 101",
             date: new Date("2025-03-30T14:00:00"),
@@ -192,7 +201,66 @@ client.on('messageCreate', async message => {
         await setSession(session);
     } else if (message.content === '.testAdd') {
         const newStudent = { studentName: "John Doe", studentId: "stu789" };
-        await addStudentToSession("Math 101", "12345", new Date("2025-03-30T14:00:00"), newStudent);
+        await addStudentToSession("Math 101", "12345", new Date("2025-03-30T14:00:00"), newStudent); */
+    } else if (message.content.split(' ')[0] === '.create' && hasAllowedRoles(message.member)) { // Formula: .create <name> <dateDay> <dateHour> <sessionHours> <tutorName> <tutorID>
+        let args = message.content.split(' ');
+        if (args.length < 7) {
+            message.reply('Please provide all required arguments: <name> <date> <sessionHours> <tutorName> <tutorID>');
+            return;
+        }
+
+        const session = {
+            name: args[1],
+            date: new Date(`${args[2]}T${args[3]}`),
+            sessionHours: parseInt(args[4]),
+            tutorName: args[5],
+            tutorID: args[6],
+            students: []
+        };
+
+        await setSession(session);
+        message.reply(`Session ${args[1]} created!`);
+    } else if (message.content.split(' ')[0] === '.cancel' && hasAllowedRoles(message.member)) { // Formula: .cancel <name> <tutorID> <dateDay> <dateHour>
+        let args = message.content.split(' ')
+
+        if (args.length < 5) {
+            message.reply('Please provide all required arguments: <name>');
+            return;
+        }
+
+        const session = {
+            name: args[1],
+            date: new Date(`${args[3]}T${args[4]}`),
+            tutorID: args[2]
+        };
+
+        await removeSession(session.name, session.tutorID, session.date);
+        message.reply('Session cancelled!');
+    } else if (message.content.split(' ')[0] === '.add' && isOwner(message.member)) { // Formula: .add <name> <tutorID> <dateDay> <dateHour> <studentName> <studentId>
+        let args = message.content.split(' ')
+
+        if (args.length < 7) {
+            message.reply('Please provide all required arguments: <name> <tutorID> <dateDay> <dateHour> <studentName> <studentId>');
+            return;
+        }
+
+        const student = {
+            studentName: args[5],
+            studentId: args[6]
+        };
+
+        await addStudentToSession(args[1], args[2], new Date(`${args[3]}T${args[4]}`), student);
+        message.reply(`Student ${args[5]} added to session!`);
+    } else if (message.content.split(' ')[0] === '.remove' && isOwner(message.member)) { // Formula: .remove <name> <tutorID> <dateDay> <dateHour> <studentId>
+        let args = message.content.split(' ')
+
+        if (args.length < 6) {
+            message.reply('Please provide all required arguments: <name> <tutorID> <dateDay> <dateHour> <studentId>');
+            return;
+        }
+
+        await removeStudentFromSession(args[1], args[2], new Date(`${args[3]}T${args[4]}`), args[5]);
+        message.reply('Student removed from session!');
     }
 });
 
