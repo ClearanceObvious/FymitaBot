@@ -25,7 +25,7 @@ DEL_STUDENT: await removeStudentFromSession("Math 101", "12345", new Date("2025-
 require('dotenv').config();
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const { MongoClient } = require("mongodb");
 
 const client = new Client({
@@ -99,6 +99,41 @@ async function getSession(name, tutorID, date) {
         console.error("Error getting session:", err);
     }
 }
+async function applyToSession(sessionName, studentName, studentId) {
+    try {
+        const sessionCollection = db.collection("sessions");
+
+        // Find the session by name (ignoring date & tutorID)
+        const session = await sessionCollection.findOne({ name: sessionName });
+
+        if (!session) {
+            console.log(`❌ No session found with the name: ${sessionName}`);
+            return false;
+        }
+
+        // Create new student object
+        const newStudent = { studentName, studentId };
+
+        // Check if the student already exists in the session
+        const studentExists = session.students.some(s => s.studentId === studentId);
+        if (studentExists) {
+            console.log(`Student ${studentName} is already in session "${sessionName}".`);
+            return false;
+        }
+
+        // Add the new student to the session
+        await sessionCollection.updateOne(
+            { name: sessionName }, // Find the session
+            { $push: { students: newStudent } } // Add student to the students array
+        );
+
+        console.log(`Successfully added ${studentName} to session "${sessionName}".`);
+        return true;
+    } catch (err) {
+        console.error("Error adding student to session:", err);
+        return false;
+    }
+}
 async function removeSession(name, tutorID, date) {
     try {
         const sessionCollection = db.collection("sessions");
@@ -161,6 +196,26 @@ async function removeStudentFromSession(sessionName, tutorID, date, studentId) {
     }
 }
 
+async function getSessionByName(scheduleName) {
+    try {
+        const scheduleCollection = db.collection("sessions");
+
+        // Find the schedule by its name
+        const schedule = await scheduleCollection.findOne({ name: scheduleName });
+
+        if (!schedule) {
+            console.log(`❌ No Session found with the name: ${scheduleName}`);
+            return null;
+        }
+
+        console.log(`Found Session`);
+        return schedule;
+    } catch (err) {
+        console.error("Error fetching Session:", err);
+        return null;
+    }
+}
+
 function hasAllowedRoles(member) {
     const allowedRoles = ['1354466746278346842', '1354467923833655459', '1354467270570672388'];
     return member.roles.cache.some(role => allowedRoles.includes(role.id));
@@ -168,6 +223,10 @@ function hasAllowedRoles(member) {
 
 function isOwner(member) {
     return member.roles.cache.has('1354466746278346842');
+}
+
+function isMember(member) {
+    return member.roles.cache.has('1354468796806467794');
 }
 
 // Connect to Discord
@@ -185,7 +244,7 @@ client.on('guildMemberAdd', member => {
 // Message Handler
 client.on('messageCreate', async message => {
     if (message.content === '.help') {
-        message.reply('Hey!')
+        message.reply('Hey! Help section not done yet.')
     /*} else if (message.content === '.createTest') {
         const session = {
             name: "Math 101",
@@ -220,7 +279,7 @@ client.on('messageCreate', async message => {
 
         await setSession(session);
         message.reply(`Session ${args[1]} created!`);
-    } else if (message.content.split(' ')[0] === '.cancel' && hasAllowedRoles(message.member)) { // Formula: .cancel <name> <tutorID> <dateDay> <dateHour>
+    } else if (message.content.split(' ')[0] === '.cancel' && isOwner(message.member)) { // Formula: .cancel <name> <tutorID> <dateDay> <dateHour>
         let args = message.content.split(' ')
 
         if (args.length < 5) {
@@ -236,21 +295,23 @@ client.on('messageCreate', async message => {
 
         await removeSession(session.name, session.tutorID, session.date);
         message.reply('Session cancelled!');
-    } else if (message.content.split(' ')[0] === '.add' && isOwner(message.member)) { // Formula: .add <name> <tutorID> <dateDay> <dateHour> <studentName> <studentId>
+    } else if (message.content.split(' ')[0] === '.add' && isOwner(message.member)) { // Formula: .add <name> <studentName> <studentId>
         let args = message.content.split(' ')
 
-        if (args.length < 7) {
-            message.reply('Please provide all required arguments: <name> <tutorID> <dateDay> <dateHour> <studentName> <studentId>');
+        if (args.length < 2) {
+            message.reply('Please provide all required arguments: <name> <studentName> <studentId>');
             return;
         }
 
-        const student = {
-            studentName: args[5],
-            studentId: args[6]
-        };
+        const scheduleName = args[1];
+        const memberId = args[3];
+        const memberName = args[2];
 
-        await addStudentToSession(args[1], args[2], new Date(`${args[3]}T${args[4]}`), student);
-        message.reply(`Student ${args[5]} added to session!`);
+        await applyToSession(scheduleName, memberName, memberId);
+        
+        let user = await client.users.fetch(memberId);
+        await user.send(`You have been successfully added to the session ${scheduleName}!`);
+
     } else if (message.content.split(' ')[0] === '.remove' && isOwner(message.member)) { // Formula: .remove <name> <tutorID> <dateDay> <dateHour> <studentId>
         let args = message.content.split(' ')
 
@@ -261,6 +322,69 @@ client.on('messageCreate', async message => {
 
         await removeStudentFromSession(args[1], args[2], new Date(`${args[3]}T${args[4]}`), args[5]);
         message.reply('Student removed from session!');
+    } else if (message.content.split(' ')[0] === '.apply' & isMember(message.member)) // Formula: .apply scheduleName
+    {
+        let scheduleName = message.content.split(' ')[1];
+        let userID = message.author.id;
+        let userName = message.author.username;
+
+        let schedule = await getSessionByName(scheduleName);
+        let scheduleTutor = schedule.tutorName;
+        let scheduleTime = schedule.sessionHours;
+        let scheduleCost = scheduleTime * 10;
+
+        const thread = await message.channel.threads.create({
+            name: `Application for ${scheduleName}`,
+            autoArchiveDuration: 10080, // Auto-Archive after 7 days
+            reason: `Application for ${scheduleName} by ${userName}`,
+            type: 12, // PRIVATE_THREAD
+            invitable: false,
+        });
+
+        await thread.members.add(userID);
+        await thread.members.add(message.guild.ownerId);
+
+        const embed = new EmbedBuilder()
+            .setTitle(`${userName} applied for ${scheduleName} with ${scheduleTutor}`)
+            .setDescription(`Schedule **${scheduleName}** will take **${scheduleTime}** ${scheduleTime === 1 ? 'hour' : 'hours'}, thus costing ***${scheduleCost}€***.\n\nComplete the Application by ***sending fymitagroup@gmail.com ${scheduleCost}€ on paypal and sending proof of it in this thread.***`)
+            .setColor(0x1E90FF)
+            .setTimestamp()
+            .setFooter({ text: 'Once purchase is completed and proof of it is shown, this thread will close.' });
+
+        thread.send({ embeds: [embed] });
+    } else if (message.content.split(' ')[0] === '.clearThreads' & isOwner(message.member)) {
+        try {
+            const guild = message.guild;
+    
+            for (const channel of guild.channels.cache.values()) {
+                if (channel.isTextBased() && channel.threads) {
+                    const activeThreads = await channel.threads.fetchActive();
+                    for (const thread of activeThreads.threads.values()) {
+                        try {
+                            await thread.delete();
+                            console.log(`✅ Deleted active thread: ${thread.name}`);
+                        } catch (err) {
+                            console.error(`❌ Failed to delete active thread ${thread.name}:`, err);
+                        }
+                    }
+    
+                    const archivedThreads = await channel.threads.fetchArchived({ limit: 100 });
+                    for (const thread of archivedThreads.threads.values()) {
+                        try {
+                            await thread.delete();
+                            console.log(`✅ Deleted archived thread: ${thread.name}`);
+                        } catch (err) {
+                            console.error(`❌ Failed to delete archived thread ${thread.name}:`, err);
+                        }
+                    }
+                }
+            }
+    
+            console.log("All threads have been deleted!");
+    
+        } catch (error) {
+            console.error("Error deleting threads:", error);
+        }
     }
 });
 
